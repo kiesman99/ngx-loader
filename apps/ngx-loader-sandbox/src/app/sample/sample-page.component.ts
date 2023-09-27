@@ -4,11 +4,12 @@ import { Component, Injector, computed, inject, signal } from '@angular/core';
 import { map } from 'rxjs';
 import { RMReq } from './models';
 import { createLoader } from '@ngx-loader';
+import { RouterModule } from '@angular/router';
 
 @Component({
   selector: 'sample-page',
   standalone: true,
-  imports: [CommonModule],
+  imports: [CommonModule, RouterModule],
   template: `
     <h1>Sample</h1>
 
@@ -38,11 +39,13 @@ import { createLoader } from '@ngx-loader';
       >
         <thead>
           <tr>
+            <th>Link</th>
             <th *ngFor="let header of headers">{{ header }}</th>
           </tr>
         </thead>
         <tbody>
           <tr *ngFor="let char of characters.value">
+            <td><a [routerLink]="['/characters', char.id]">GO</a></td>
             <td *ngFor="let header of headers">{{ $any(char)[header] }}</td>
           </tr>
         </tbody>

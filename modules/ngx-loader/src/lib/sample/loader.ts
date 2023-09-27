@@ -11,16 +11,22 @@ import {
   toSignal,
 } from '@angular/core/rxjs-interop';
 import {
+  BehaviorSubject,
   Observable,
   ReplaySubject,
   Subject,
+  catchError,
   debounceTime,
+  filter,
   isObservable,
   merge,
+  of,
   scan,
   shareReplay,
-  switchMap
+  switchMap,
+  tap,
 } from 'rxjs';
+import { LoadResponse, createLoadError, createLoadIdle, createLoadLoading, createLoadSuccess } from './loader.model';
 
 /**
  * This is a POC of a compositable helper to
@@ -34,6 +40,12 @@ import {
  * - [ ] Optimistic update of entites
  * - [ ] On Demand reload of entities
  * - [ ] List should be filterable on client side
+ * 
+ * Optional Goals:
+ * 
+ * - [ ] createLoaderWithResolver
+ *  - a specialized kind of loader that exports a resolver
+ *    that can be hooked up and provides the first value of the createLoader  
  */
 
 export type ObSig<T> = Observable<T> | Signal<T>;
@@ -50,6 +62,8 @@ export const createLoader = <
   const destroyRef = inject(DestroyRef);
   const params$ = new ReplaySubject<ParamsObject>(1);
   const reload$ = new Subject<void>();
+
+  const res$ = new BehaviorSubject<LoadResponse<R>>(createLoadIdle<R>());
 
   const load = (loadParams: ParamsObject) => {
     params$.next(loadParams);
@@ -70,8 +84,10 @@ export const createLoader = <
     reload$.next();
   };
 
-  const res$ = merge(params$, reload$).pipe(
+  merge(params$, reload$).pipe(
+    takeUntilDestroyed(),
     debounceTime(100),
+    tap(() => res$.next(createLoadLoading<R>(undefined))),
     scan((old, current) => {
       if (!old && !current) {
         throw new Error(`Cannot reload before loaded values at least once`);
@@ -79,17 +95,24 @@ export const createLoader = <
 
       return current || old;
     }),
-    switchMap((p) => fn(p as ParamsObject)),
+    // is another takeUntilDestroyed here really needed?
+    switchMap((p) => fn(p as ParamsObject).pipe(
+      catchError(err => {
+        res$.next(createLoadError(err));
+        return of(undefined);
+      })
+    )),
+    filter((res): res is R => res !== undefined),
     shareReplay(1)
-  );
+  ).subscribe({
+    next: value => res$.next(createLoadSuccess(value)),
+    error: err => {
+      console.error(err);
+      res$.next(createLoadError(err));
+    }
+  });
 
-  // const res$ = params$.pipe(
-  //   debounceTime(300),
-  //   switchMap((p) => fn(p)),
-  //   shareReplay(1)
-  // );
-
-  const resSig = toSignal(res$);
+  const resSig = toSignal(res$, { requireSync: true });
 
   const sample = computed(() => {
     return resSig();
@@ -99,6 +122,6 @@ export const createLoader = <
     $: res$,
     load,
     connect,
-    reload
+    reload,
   });
 };

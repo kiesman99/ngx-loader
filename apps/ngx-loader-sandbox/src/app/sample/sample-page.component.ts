@@ -1,11 +1,6 @@
 import { CommonModule } from '@angular/common';
 import { HttpClient } from '@angular/common/http';
-import {
-  Component,
-  Injector,
-  inject,
-  signal
-} from '@angular/core';
+import { Component, Injector, computed, inject, signal } from '@angular/core';
 import { map } from 'rxjs';
 import { RMReq } from './models';
 import { createLoader } from '@ngx-loader';
@@ -19,31 +14,40 @@ import { createLoader } from '@ngx-loader';
 
     <div class="flex flex-row justify-between items-center my-5">
       <div class="flex flex-row gap-3 items-center">
-        <button edsButton="primary" (click)="prev()">PREV</button>
+        <button edsButton="primary" (click)="prev()" [disabled]="prevDisabled()">PREV</button>
         <p>{{ page() }}</p>
-        <button edsButton="primary" (click)="next()">NEXT</button>
+        <button edsButton="primary" (click)="next()" [disabled]="nextDisabled()">NEXT</button>
       </div>
-      <button edsButton="primary" (click)="charactersReq.reload()">
+      <button edsButton="primary" (click)="charactersReq.reload()" [disabled]="reloadDisabled()">
         RELOAD
       </button>
     </div>
 
-    <!-- <pre>{{ charactersReq.$ | async | json }}</pre> -->
+    <p><strong>STATE: </strong>{{ charactersReq().state }}</p>
 
-    <table class="table-auto w-full">
-      <thead>
-        <tr>
-          <th *ngFor="let header of headers">{{ header }}</th>
-        </tr>
-      </thead>
-      <tbody>
-        <tr *ngFor="let char of charactersReq()">
-          <td *ngFor="let header of headers">{{ $any(char)[header] }}</td>
-        </tr>
-      </tbody>
-    </table>
+    <ng-container *ngIf="charactersReq() as charachters">
+      <ng-container *ngIf="charachters.state === 'error'">
+        <p>{{charachters.error | json}}</p>
+      </ng-container>
+    </ng-container>
 
-    <!-- <pre>{{charactersReq() | json}}</pre> -->
+    <ng-container *ngIf="charactersReq() as characters">
+      <table
+        class="table-auto w-full"
+        *ngIf="characters.state === 'success'"
+      >
+        <thead>
+          <tr>
+            <th *ngFor="let header of headers">{{ header }}</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr *ngFor="let char of characters.value">
+            <td *ngFor="let header of headers">{{ $any(char)[header] }}</td>
+          </tr>
+        </tbody>
+      </table>
+    </ng-container>
   `,
 })
 export class SamplePageComponent {
@@ -60,11 +64,20 @@ export class SamplePageComponent {
 
   headers = ['id', 'name', 'status', 'species', 'gender'];
 
+  nextDisabled = computed(() => {
+    return this.charactersReq().state === 'loading';
+  })
+
+  prevDisabled = computed(() => {
+    return this.charactersReq().state === 'loading' || this.page() === 1;
+  });
+
+  reloadDisabled = computed(() => {
+    return this.charactersReq().state !== 'success';
+  });
+
   constructor() {
     this.charactersReq.connect(this.page);
-    // effect(() => {
-    //   this.charactersReq.load(this.page());
-    // });
   }
 
   prev() {

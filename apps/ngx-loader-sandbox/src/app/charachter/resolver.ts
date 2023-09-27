@@ -1,6 +1,6 @@
 import { HttpClient } from '@angular/common/http';
 import { inject } from '@angular/core';
-import { createLoaderWithResolver } from '@ngx-loader';
+import { r } from '@ngx-loader';
 
 export interface Character {
   id: number;
@@ -27,16 +27,27 @@ export interface Location {
   url: string;
 }
 
-export const [characterResolver] = createLoaderWithResolver((route, state) => {
-  const http = inject(HttpClient);
+export const [characterResolver, injectCharacterLoader] = r(
+  (route, state) => {
+    return route.params['id'] as number;
+  },
+  id => {
+    const http = inject(HttpClient);
 
-  const charId = route.paramMap.get('id');
-
-  if (!charId) {
-    throw new Error('No character id provided');
+    return http.get<Character>(`https://rickandmortyapi.com/api/character/${id}`);
   }
+)
 
-  return http.get<Character>(
-    `https://rickandmortyapi.com/api/character/${charId}`
-  );
-});
+// export const [characterResolver] = createLoaderWithResolver((route, state) => {
+//   const http = inject(HttpClient);
+
+//   const charId = route.paramMap.get('id');
+
+//   if (!charId) {
+//     throw new Error('No character id provided');
+//   }
+
+//   return http.get<Character>(
+//     `https://rickandmortyapi.com/api/character/${charId}`
+//   );
+// });

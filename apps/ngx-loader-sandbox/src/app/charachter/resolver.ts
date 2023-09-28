@@ -1,6 +1,7 @@
 import { HttpClient } from '@angular/common/http';
 import { inject } from '@angular/core';
 import { r } from '@ngx-loader';
+import { of } from 'rxjs';
 
 export interface Character {
   id: number;

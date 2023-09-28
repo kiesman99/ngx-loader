@@ -12,8 +12,9 @@ import { Character, injectCharacterLoader } from "./resolver";
         <h1>Character</h1>
 
         <button (click)="character.reload()">RELOAD</button>
+        <button (click)="loadAnother()">Another</button>
 
-        <pre>{{ character$ | async | json }}</pre>
+        <pre>{{ character() | json }}</pre>
     `
 })
 export class CharacterPageComponent {
@@ -21,5 +22,7 @@ export class CharacterPageComponent {
 
     character = injectCharacterLoader();
 
-    character$ = this.character.$;
+    loadAnother() {
+        this.character.load(4);
+    }
 }

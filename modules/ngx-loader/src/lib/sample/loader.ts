@@ -25,6 +25,7 @@ import {
   of,
   scan,
   shareReplay,
+  skip,
   switchMap,
   tap,
 } from 'rxjs';
@@ -67,6 +68,14 @@ export const createLoader = <
   options?: {
     initialValue?: R;
     injector?: Injector;
+    /**
+     * This parameter is usually not needed when creating
+     * a loader on it's own. It's merely used when auto 
+     * creating a loader while building a resolver, so that
+     * the generated loader will know the previous params put
+     * in by the resolver
+     */
+    initialParams?: ParamsObject;
   }
 ) => {
   !options?.injector && assertInInjectionContext(createLoader);
@@ -75,7 +84,7 @@ export const createLoader = <
 
   return runInInjectionContext(actualInjector, () => {
     const destroyRef = inject(DestroyRef);
-    const params$ = new ReplaySubject<ParamsObject>(1);
+    const params$ = new BehaviorSubject<ParamsObject | undefined>(options?.initialParams);
     const reload$ = new Subject<void>();
 
     const initial = options?.initialValue
@@ -103,7 +112,13 @@ export const createLoader = <
       reload$.next();
     };
 
-    merge(params$, reload$)
+    const p$ = params$.pipe(
+      skip(options?.initialParams ? 1 : 0),
+      filter((param): param is ParamsObject => param !== undefined),
+      shareReplay(1)
+    );
+
+    merge(p$, reload$)
       .pipe(
         takeUntilDestroyed(),
         debounceTime(100),
@@ -117,12 +132,15 @@ export const createLoader = <
         }),
         // is another takeUntilDestroyed here really needed?
         switchMap((p) =>
-          fn(p as ParamsObject).pipe(
-            catchError((err) => {
-              res$.next(createLoadError(err));
-              return of(undefined);
-            })
-          )
+          // TODO: check if this is okay
+          runInInjectionContext(actualInjector, () => {
+            return fn(p as ParamsObject).pipe(
+              catchError((err) => {
+                res$.next(createLoadError(err));
+                return of(undefined);
+              })
+            )
+          })
         ),
         filter((res): res is R => res !== undefined),
         shareReplay(1)

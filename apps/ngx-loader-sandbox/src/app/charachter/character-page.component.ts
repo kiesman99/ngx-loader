@@ -16,7 +16,7 @@ import { Character } from './resolver';
     <button (click)="character.reload()">RELOAD</button>
     <button (click)="loadAnother()">Another</button>
 
-    <pre>{{ character.$ | async | json }}</pre>
+    <pre>{{ character.s$ | async | json }}</pre>
   `,
 })
 export class CharacterPageComponent {

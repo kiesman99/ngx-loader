@@ -32,6 +32,15 @@ import {
   switchMap,
 } from 'rxjs';
 
+type LoaderState<Result, Error> = {
+  value: Result | undefined;
+  state: 'idle' | 'loading' | 'success' | 'error';
+  error: Error | null;
+  metadata: {
+    timestamp: number | undefined;
+  };
+};
+
 class Loader<Result, Params, Error = unknown> {
   private readonly _result$ = new BehaviorSubject<Result | undefined>(
     undefined
@@ -40,9 +49,22 @@ class Loader<Result, Params, Error = unknown> {
   private readonly params = toSignal(this._params$);
   private readonly _error$ = new Subject<Error>();
 
+  private readonly _loaderState$ = new ReplaySubject<
+    LoaderState<Result, Error>
+  >(1);
+
   private connectSubscription?: Subscription;
 
   constructor(private loaderFn: (params: Params) => Observable<Result>) {
+    this._loaderState$.next({
+      state: 'idle',
+      value: undefined,
+      error: null,
+      metadata: {
+        timestamp: undefined,
+      },
+    });
+
     this._params$
       .pipe(
         switchMap((params) =>
@@ -57,6 +79,39 @@ class Loader<Result, Params, Error = unknown> {
       .subscribe((result) => {
         this._result$.next(result);
       });
+
+    this._params$.subscribe(() => {
+      this._loaderState$.next({
+        state: 'loading',
+        value: this._result$.getValue(),
+        error: null,
+        metadata: {
+          timestamp: undefined
+        }
+      })
+    })
+
+    this.result$.subscribe((res) => {
+      this._loaderState$.next({
+        value: res,
+        state: 'success',
+        error: null,
+        metadata: {
+          timestamp: Date.now(),
+        },
+      });
+    });
+
+    this._error$.subscribe((err) =>
+      this._loaderState$.next({
+        value: undefined,
+        state: 'error',
+        error: err,
+        metadata: {
+          timestamp: undefined,
+        },
+      })
+    );
   }
 
   load(params: Params) {
@@ -93,6 +148,10 @@ class Loader<Result, Params, Error = unknown> {
   get result$() {
     return this._result$.asObservable();
   }
+
+  get s$() {
+    return this._loaderState$.asObservable();
+  }
 }
 
 export const createLoader2 = <Result, Params>(
@@ -102,6 +161,7 @@ export const createLoader2 = <Result, Params>(
 
   return {
     $: loader.result$,
+    s$: loader.s$,
     load: loader.load.bind(loader),
     connect: loader.connect.bind(loader),
     mutate: loader.mutate.bind(loader),

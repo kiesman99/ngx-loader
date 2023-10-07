@@ -1,13 +1,14 @@
 import { CommonModule } from '@angular/common';
 import { HttpClient } from '@angular/common/http';
 import { Component, Injector, computed, inject, signal } from '@angular/core';
+import { toSignal } from '@angular/core/rxjs-interop';
+import { RouterModule } from '@angular/router';
+import { createLoader2 } from '@ngx-loader';
 import { map } from 'rxjs';
 import { RMReq } from './models';
-import { createLoader } from '@ngx-loader';
-import { RouterModule } from '@angular/router';
 
 @Component({
-  selector: 'sample-page',
+  selector: 'ngx-loader-sample-page',
   standalone: true,
   imports: [CommonModule, RouterModule],
   template: `
@@ -24,18 +25,18 @@ import { RouterModule } from '@angular/router';
       </button>
     </div>
 
-    <p><strong>STATE: </strong>{{ charactersReq().state }}</p>
+    <p><strong>STATE: </strong>{{ characterState().state }}</p>
 
-    <ng-container *ngIf="charactersReq() as charachters">
+    <ng-container *ngIf="characterState() as charachters">
       <ng-container *ngIf="charachters.state === 'error'">
         <p>{{charachters.error | json}}</p>
       </ng-container>
     </ng-container>
 
-    <ng-container *ngIf="charactersReq() as characters">
+    <ng-container *ngIf="characterState() as characters">
       <table
         class="table-auto w-full"
-        *ngIf="characters.state === 'success'"
+        *ngIf="characters.value !== undefined"
       >
         <thead>
           <tr>
@@ -59,24 +60,28 @@ export class SamplePageComponent {
 
   page = signal(1);
 
-  charactersReq = createLoader((page: number) => {
+  charactersReq = createLoader2((page: number) => {
     return this.http
       .get<RMReq>(`https://rickandmortyapi.com/api/character?page=${page}`)
       .pipe(map((res) => res.results));
   });
 
+  characterState = toSignal(this.charactersReq.s$, {
+    requireSync: true
+  });
+
   headers = ['id', 'name', 'status', 'species', 'gender'];
 
   nextDisabled = computed(() => {
-    return this.charactersReq().state === 'loading';
+    return this.characterState().state === 'loading';
   })
 
   prevDisabled = computed(() => {
-    return this.charactersReq().state === 'loading' || this.page() === 1;
+    return this.characterState().state === 'loading' || this.page() === 1;
   });
 
   reloadDisabled = computed(() => {
-    return this.charactersReq().state !== 'success';
+    return this.characterState().state !== 'success';
   });
 
   constructor() {

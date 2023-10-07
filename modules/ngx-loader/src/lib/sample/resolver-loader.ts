@@ -1,7 +1,7 @@
 import { Injector, inject } from '@angular/core';
 import { ActivatedRoute, ResolveFn } from '@angular/router';
 import { Observable } from 'rxjs';
-import { createLoader } from './loader';
+import { createLoader } from './create-loader';
 
 // export const createLoaderWithResolver = <
 //   R,

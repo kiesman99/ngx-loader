@@ -1,42 +1,3 @@
-import {
-  DestroyRef,
-  Injector,
-  Signal,
-  assertInInjectionContext,
-  computed,
-  inject,
-  runInInjectionContext,
-} from '@angular/core';
-import {
-  takeUntilDestroyed,
-  toObservable,
-  toSignal,
-} from '@angular/core/rxjs-interop';
-import {
-  BehaviorSubject,
-  Observable,
-  ReplaySubject,
-  Subject,
-  catchError,
-  debounceTime,
-  filter,
-  isObservable,
-  merge,
-  of,
-  scan,
-  shareReplay,
-  skip,
-  switchMap,
-  tap,
-} from 'rxjs';
-import {
-  LoadResponse,
-  createLoadError,
-  createLoadIdle,
-  createLoadLoading,
-  createLoadSuccess,
-} from './loader.model';
-
 /**
  * This is a POC of a compositable helper to
  * load entities from an api. It should provide
@@ -46,7 +7,7 @@ import {
  *
  * - [x] Load entities via {HttpClient}
  * - [x] React on reactive variables (Observables or Signals) which retrigger loading entities
- * - [ ] Optimistic update of entites
+ * - [x] Optimistic update of entites
  * - [ ] On Demand reload of entities
  * - [ ] List should be filterable on client side
  *
@@ -57,113 +18,93 @@ import {
  *    that can be hooked up and provides the first value of the createLoader
  */
 
-export type ObSig<T> = Observable<T> | Signal<T>;
+import { Signal } from '@angular/core';
+import { toObservable, toSignal } from '@angular/core/rxjs-interop';
+import {
+  BehaviorSubject,
+  Observable,
+  ReplaySubject,
+  Subject,
+  Subscription,
+  catchError,
+  isObservable,
+  of,
+  switchMap,
+} from 'rxjs';
 
-export const createLoader = <
-  R,
-  RequiredParams = void,
-  ParamsObject extends ObSig<RequiredParams> | unknown = ObSig<RequiredParams>
->(
-  fn: (params: ParamsObject) => Observable<R>,
-  options?: {
-    initialValue?: R;
-    injector?: Injector;
-    /**
-     * This parameter is usually not needed when creating
-     * a loader on it's own. It's merely used when auto 
-     * creating a loader while building a resolver, so that
-     * the generated loader will know the previous params put
-     * in by the resolver
-     */
-    initialParams?: ParamsObject;
-  }
-) => {
-  !options?.injector && assertInInjectionContext(createLoader);
+class Loader<Result, Params, Error = unknown> {
+  private readonly _result$ = new BehaviorSubject<Result | undefined>(
+    undefined
+  );
+  private readonly _params$ = new ReplaySubject<Params>(1);
+  private readonly params = toSignal(this._params$);
+  private readonly _error$ = new Subject<Error>();
 
-  const actualInjector = options?.injector ?? inject(Injector);
+  private connectSubscription?: Subscription;
 
-  return runInInjectionContext(actualInjector, () => {
-    const destroyRef = inject(DestroyRef);
-    const params$ = new BehaviorSubject<ParamsObject | undefined>(options?.initialParams);
-    const reload$ = new Subject<void>();
-
-    const initial = options?.initialValue
-      ? createLoadSuccess(options.initialValue)
-      : createLoadIdle<R>();
-
-    const res$ = new BehaviorSubject<LoadResponse<R>>(initial);
-
-    const load = (loadParams: ParamsObject) => {
-      params$.next(loadParams);
-    };
-
-    const connect = (
-      loadParams: Observable<ParamsObject> | Signal<ParamsObject>
-    ) => {
-      const obs$ = isObservable(loadParams)
-        ? loadParams
-        : toObservable(loadParams);
-      obs$
-        .pipe(takeUntilDestroyed(destroyRef))
-        .subscribe((value) => params$.next(value));
-    };
-
-    const reload = () => {
-      reload$.next();
-    };
-
-    const p$ = params$.pipe(
-      skip(options?.initialParams ? 1 : 0),
-      filter((param): param is ParamsObject => param !== undefined),
-      shareReplay(1)
-    );
-
-    merge(p$, reload$)
+  constructor(private loaderFn: (params: Params) => Observable<Result>) {
+    this._params$
       .pipe(
-        takeUntilDestroyed(),
-        debounceTime(100),
-        tap(() => res$.next(createLoadLoading<R>(undefined))),
-        scan((old, current) => {
-          if (!old && !current) {
-            throw new Error(`Cannot reload before loaded values at least once`);
-          }
-
-          return current || old;
-        }),
-        // is another takeUntilDestroyed here really needed?
-        switchMap((p) =>
-          // TODO: check if this is okay
-          runInInjectionContext(actualInjector, () => {
-            return fn(p as ParamsObject).pipe(
-              catchError((err) => {
-                res$.next(createLoadError(err));
-                return of(undefined);
-              })
-            )
-          })
-        ),
-        filter((res): res is R => res !== undefined),
-        shareReplay(1)
+        switchMap((params) =>
+          this.loaderFn(params).pipe(
+            catchError((err) => {
+              this._error$.next(err);
+              return of();
+            })
+          )
+        )
       )
-      .subscribe({
-        next: (value) => res$.next(createLoadSuccess(value)),
-        error: (err) => {
-          console.error(err);
-          res$.next(createLoadError(err));
-        },
+      .subscribe((result) => {
+        this._result$.next(result);
       });
+  }
 
-    const resSig = toSignal(res$, { requireSync: true });
+  load(params: Params) {
+    this._params$.next(params);
+  }
 
-    const sample = computed(() => {
-      return resSig();
-    });
+  reload() {
+    const lastParams = this.params();
+    if (!lastParams) {
+      throw new Error(
+        `Cannot load before the loader has been loaded at least once.`
+      );
+    }
 
-    return Object.assign(sample, {
-      $: res$,
-      load,
-      connect,
-      reload,
-    });
-  });
+    this.load(lastParams);
+  }
+
+  mutate(mutatorFn: (value: Result | undefined) => Result | undefined) {
+    this._result$.next(mutatorFn(this._result$.getValue()));
+  }
+
+  connect(params: Observable<Params> | Signal<Params>) {
+    const paramsObs = isObservable(params) ? params : toObservable(params);
+    this.connectSubscription?.unsubscribe();
+    this.connectSubscription = paramsObs.subscribe((params) =>
+      this._params$.next(params)
+    );
+  }
+
+  destroy() {
+    this.connectSubscription?.unsubscribe();
+  }
+
+  get result$() {
+    return this._result$.asObservable();
+  }
+}
+
+export const createLoader2 = <Result, Params>(
+  loaderFn: (params: Params) => Observable<Result>
+) => {
+  const loader = new Loader(loaderFn);
+
+  return {
+    $: loader.result$,
+    load: loader.load.bind(loader),
+    connect: loader.connect.bind(loader),
+    mutate: loader.mutate.bind(loader),
+    reload: loader.reload.bind(loader),
+  };
 };

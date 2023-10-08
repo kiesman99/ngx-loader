@@ -32,7 +32,7 @@ import {
   switchMap,
 } from 'rxjs';
 
-type LoaderState<Result, Error> = {
+export type LoaderState<Result, Error> = {
   value: Result | undefined;
   state: 'idle' | 'loading' | 'success' | 'error';
   error: Error | null;

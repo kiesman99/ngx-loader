@@ -2,21 +2,27 @@ import { CommonModule } from '@angular/common';
 import { HttpClient } from '@angular/common/http';
 import { Component, inject } from '@angular/core';
 import { ActivatedRoute } from '@angular/router';
-import { createLoader2 } from '@ngx-loader';
+import { LoaderContainerDirective, createLoader2 } from '@ngx-loader';
 import { filter, map } from 'rxjs';
 import { Character } from './resolver';
 
 @Component({
   selector: 'ngx-loader-character-page',
   standalone: true,
-  imports: [CommonModule],
+  imports: [CommonModule, LoaderContainerDirective],
   template: `
     <h1>Character</h1>
 
     <button (click)="character.reload()">RELOAD</button>
     <button (click)="loadAnother()">Another</button>
 
-    <pre>{{ character.s$ | async | json }}</pre>
+    <ng-container *ngxLoaderContainer="character.s$; let char; let s = state">
+        <p>State: {{s}}</p>
+        <hr>
+        <pre>{{char | json}}</pre>
+    </ng-container>
+
+    <!-- <pre>{{ character.s$ | async | json }}</pre> -->
   `,
 })
 export class CharacterPageComponent {

@@ -2,9 +2,10 @@ import { CommonModule } from '@angular/common';
 import { HttpClient } from '@angular/common/http';
 import { Component, inject } from '@angular/core';
 import { ActivatedRoute } from '@angular/router';
-import { LoaderContainerDirective, createLoader2 } from '@ngx-loader';
+import { LoaderContainerDirective, createLoader2, injectPathParams$ } from '@ngx-loader';
 import { filter, map } from 'rxjs';
 import { Character } from './resolver';
+import {z} from 'zod';
 
 @Component({
   selector: 'ngx-loader-character-page',
@@ -29,10 +30,12 @@ export class CharacterPageComponent {
   private readonly route = inject(ActivatedRoute);
   private readonly http = inject(HttpClient);
 
-  private characterId$ = this.route.paramMap.pipe(
-    map(params => params.get('id')),
-    filter((id): id is string => id !== null),
-    map(id => Number(id))
+  private pathParams$ = injectPathParams$(z.object({
+    id: z.coerce.number()
+  }))
+
+  private characterId$ = this.pathParams$.pipe(
+    map(p => p.id)
   );
 
   constructor() {

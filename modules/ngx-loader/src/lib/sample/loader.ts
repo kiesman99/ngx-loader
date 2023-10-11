@@ -27,7 +27,11 @@ import {
   Subject,
   Subscription,
   catchError,
+  combineLatest,
+  debounceTime,
+  filter,
   isObservable,
+  map,
   of,
   switchMap,
 } from 'rxjs';
@@ -54,6 +58,7 @@ class Loader<Result, Params, Error = unknown> {
   >(1);
 
   private connectSubscription?: Subscription;
+  private connectFromLoaderSubscription?: Subscription;
 
   constructor(private loaderFn: (params: Params) => Observable<Result>) {
     this._loaderState$.next({
@@ -86,10 +91,10 @@ class Loader<Result, Params, Error = unknown> {
         value: this._result$.getValue(),
         error: null,
         metadata: {
-          timestamp: undefined
-        }
-      })
-    })
+          timestamp: undefined,
+        },
+      });
+    });
 
     this.result$.subscribe((res) => {
       this._loaderState$.next({
@@ -129,7 +134,7 @@ class Loader<Result, Params, Error = unknown> {
     this.load(lastParams);
   }
 
-  mutate(mutatorFn: (value: Result | undefined) => Result | undefined) {
+  update(mutatorFn: (value: Result | undefined) => Result | undefined) {
     this._result$.next(mutatorFn(this._result$.getValue()));
   }
 
@@ -139,6 +144,22 @@ class Loader<Result, Params, Error = unknown> {
     this.connectSubscription = paramsObs.subscribe((params) =>
       this._params$.next(params)
     );
+  }
+  connectFromLoader(
+    loader:
+      | Observable<LoaderState<Params, unknown>>
+      | Signal<LoaderState<Params, unknown>>
+  ) {
+    const loaderObs = isObservable(loader) ? loader : toObservable(loader);
+    this.connectFromLoaderSubscription?.unsubscribe();
+    this.connectFromLoaderSubscription = loaderObs
+      .pipe(
+        map((res) => res.value),
+        filter((value): value is Params => value !== undefined)
+      )
+      .subscribe((value) => {
+        this._params$.next(value);
+      });
   }
 
   destroy() {
@@ -164,7 +185,113 @@ export const createLoader2 = <Result, Params>(
     s$: loader.s$,
     load: loader.load.bind(loader),
     connect: loader.connect.bind(loader),
-    mutate: loader.mutate.bind(loader),
+    connectFromLoader: loader.connectFromLoader.bind(loader),
+    update: loader.update.bind(loader),
     reload: loader.reload.bind(loader),
+  };
+};
+
+type CreateLoaderReturn<Result, Params> = ReturnType<
+  typeof createLoader2<Result, Params>
+>;
+
+type CreateLoaderReturnType<L> = L extends CreateLoaderReturn<infer T, any>
+  ? T
+  : never;
+
+// export function forkJoin<T extends Record<string, ObservableInput<any>>>(
+//   sourcesObject: T
+// ): Observable<{ [K in keyof T]: ObservedValueOf<T[K]> }>;
+
+// export type ObservedValueOf<O> = O extends ObservableInput<infer T> ? T : never;
+
+// TODO: hier sollte ein besseres handling für die values gemacht werden
+// gerade wird sobald ein neues value da ist, dieses in das result gepackt.
+// eigentlich, sollte das values objekt erst "enriched" werden, wenn alle loader
+// auf 'success' gewechselt haben.
+export const mergeLoader = <
+  T extends Record<string, CreateLoaderReturn<any, any>>
+>(
+  sourcesLoader: T
+): Omit<
+  CreateLoaderReturn<
+    { [K in keyof T]: CreateLoaderReturnType<T[K]> | undefined },
+    unknown
+  >,
+  '$' | 'load' | 'connect' | 'connectFromLoader' | 'update' | 'reload'
+> => {
+  const mergedLoaders = combineLatest(
+    Object.keys(sourcesLoader).reduce((acc, key) => {
+      const loader = sourcesLoader[key];
+      acc[key] = loader.s$;
+      return acc;
+    }, {} as Record<string, Observable<LoaderState<any, any>>>)
+  );
+
+  const mergedResult = mergedLoaders.pipe(
+    debounceTime(100),
+    map((obj) => {
+      console.log('merge', obj);
+      const isError = Object.values(obj).some((s) => s.state === 'error');
+      const isLoading = Object.values(obj).some((s) => s.state === 'loading');
+      const isIdle = Object.values(obj).some((s) => s.state === 'idle');
+      const isSuccess = Object.values(obj).every((s) => s.state === 'success');
+
+      const values = Object.keys(obj).reduce((acc, key) => {
+        acc[key] = obj[key].value;
+        return acc;
+      }, {} as Record<string, any>);
+
+      if (isError) {
+        const errors = Object.keys(obj).reduce((acc, key) => {
+          acc[key] = obj[key].error;
+          return acc;
+        }, {} as Record<string, unknown>);
+
+        return <LoaderState<any, any>>{
+          state: 'error',
+          value: values,
+          error: errors,
+          metadata: {
+            timestamp: undefined,
+          },
+        };
+      }
+
+      if (isLoading) {
+        return <LoaderState<any, any>>{
+          state: 'loading',
+          value: values,
+          error: null,
+          metadata: {
+            timestamp: undefined,
+          },
+        };
+      }
+
+      if (isIdle) {
+        return <LoaderState<any, any>>{
+          state: 'idle',
+          value: values,
+          error: null,
+          metadata: {
+            timestamp: undefined,
+          },
+        };
+      }
+
+      return <LoaderState<any, any>>{
+        state: 'success',
+        value: values,
+        error: null,
+        metadata: {
+          timestamp: undefined,
+        },
+      };
+    })
+  );
+
+  return {
+    s$: mergedResult,
   };
 };

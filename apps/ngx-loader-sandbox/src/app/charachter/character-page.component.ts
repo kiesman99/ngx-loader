@@ -2,10 +2,11 @@ import { CommonModule } from '@angular/common';
 import { HttpClient } from '@angular/common/http';
 import { Component, inject } from '@angular/core';
 import { ActivatedRoute } from '@angular/router';
-import { LoaderContainerDirective, createLoader2, injectPathParams$ } from '@ngx-loader';
-import { filter, map } from 'rxjs';
-import { Character } from './resolver';
-import {z} from 'zod';
+import { LoaderContainerDirective, createLoader2, injectPathParams$, mergeLoader } from '@ngx-loader';
+import { forkJoin, from, map, of } from 'rxjs';
+import { z } from 'zod';
+import { Character, Episode } from './resolver';
+import { toSignal } from '@angular/core/rxjs-interop';
 
 @Component({
   selector: 'ngx-loader-character-page',
@@ -17,17 +18,21 @@ import {z} from 'zod';
     <button (click)="character.reload()">RELOAD</button>
     <button (click)="loadAnother()">Another</button>
 
-    <ng-container *ngxLoaderContainer="character.s$; let char; let s = state">
+    <hr>
+    <pre>{{vm() | json}}</pre>
+    <hr>
+
+    <button (click)="character.reload()">RELOAD</button>
+    <button (click)="loadAnother()">Another</button>
+
+    <ng-container *ngxLoaderContainer="character.s$; let character; let s = state">
         <p>State: {{s}}</p>
         <hr>
-        <pre>{{char | json}}</pre>
+        <pre>{{character | json}}</pre>
     </ng-container>
-
-    <!-- <pre>{{ character.s$ | async | json }}</pre> -->
   `,
 })
 export class CharacterPageComponent {
-  private readonly route = inject(ActivatedRoute);
   private readonly http = inject(HttpClient);
 
   private pathParams$ = injectPathParams$(z.object({
@@ -38,15 +43,36 @@ export class CharacterPageComponent {
     map(p => p.id)
   );
 
-  constructor() {
-    this.character.connect(this.characterId$);
-  }
-
   character = createLoader2((characterId: number) => {
     return this.http.get<Character>(
       `https://rickandmortyapi.com/api/character/${characterId}`
     );
   });
+
+  episodesOfCharacter = createLoader2((character: Character) => {
+    const episodes = character.episode.map(episodeLink => {
+      return this.http.get<Episode>(episodeLink)
+    });
+
+    const test = forkJoin({
+      id: of(2),
+      name: of('hello'),
+      hero: of({ heroName: 'gustav' })
+    })
+
+    return forkJoin(episodes);
+  });
+
+  vm = toSignal(mergeLoader({
+    charachter: this.character,
+    episodes: this.episodesOfCharacter
+  }).s$);
+
+  constructor() {
+
+    this.character.connect(this.characterId$);
+    this.episodesOfCharacter.connectFromLoader(this.character.s$);
+  }
 
   loadAnother() {
     this.character.load(4);

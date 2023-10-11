@@ -2,6 +2,16 @@ import { HttpClient } from '@angular/common/http';
 import { inject } from '@angular/core';
 import { r } from '@ngx-loader';
 
+export interface Episode {
+  id: number
+  name: string
+  air_date: string
+  episode: string
+  characters: string[]
+  url: string
+  created: string
+}
+
 export interface Character {
   id: number;
   name: string;

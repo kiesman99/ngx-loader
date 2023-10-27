@@ -3,9 +3,10 @@ import { HttpClient } from '@angular/common/http';
 import { Component, Injector, computed, inject, signal } from '@angular/core';
 import { toSignal } from '@angular/core/rxjs-interop';
 import { RouterModule } from '@angular/router';
-import { createLoader2 } from '@ngx-loader';
+import { createLoader } from '@ngx-loader';
 import { map } from 'rxjs';
 import { RMReq } from './models';
+import { injectCharacterLoader } from '../charachter/character.loader';
 
 @Component({
   selector: 'ngx-loader-sample-page',
@@ -46,7 +47,7 @@ import { RMReq } from './models';
         </thead>
         <tbody>
           <tr *ngFor="let char of characters.value">
-            <td><a [routerLink]="['/characters', char.id]">GO</a></td>
+            <td><a [routerLink]="['/characters', char.id]" (mouseover)="characterLoader.preload(char.id)">GO</a></td>
             <td *ngFor="let header of headers">{{ $any(char)[header] }}</td>
           </tr>
         </tbody>
@@ -60,7 +61,9 @@ export class SamplePageComponent {
 
   page = signal(1);
 
-  charactersReq = createLoader2((page: number) => {
+  characterLoader = injectCharacterLoader();
+
+  charactersReq = createLoader((page: number) => {
     return this.http
       .get<RMReq>(`https://rickandmortyapi.com/api/character?page=${page}`)
       .pipe(map((res) => res.results));

@@ -18,7 +18,8 @@
  *    that can be hooked up and provides the first value of the createLoader
  */
 
-import { Signal } from '@angular/core';
+import { HttpClient } from '@angular/common/http';
+import { InjectionToken, Injector, Signal, assertInInjectionContext, inject, runInInjectionContext } from '@angular/core';
 import { toObservable, toSignal } from '@angular/core/rxjs-interop';
 import {
   BehaviorSubject,
@@ -30,10 +31,13 @@ import {
   combineLatest,
   debounceTime,
   filter,
+  firstValueFrom,
   isObservable,
   map,
   of,
+  skipWhile,
   switchMap,
+  take,
 } from 'rxjs';
 
 export type LoaderState<Result, Error> = {
@@ -45,7 +49,7 @@ export type LoaderState<Result, Error> = {
   };
 };
 
-class Loader<Result, Params, Error = unknown> {
+export class Loader<Result, Params, Error = unknown> {
   private readonly _result$ = new BehaviorSubject<Result | undefined>(
     undefined
   );
@@ -166,6 +170,26 @@ class Loader<Result, Params, Error = unknown> {
     this.connectSubscription?.unsubscribe();
   }
 
+  ensureLoad(params: Params) {
+    console.log('ensure load');
+    this._params$.next(params);
+    return this.s$.pipe(
+      skipWhile(state => state.state === 'idle' || state.state === 'error'),
+      take(1),
+      map(state => {
+        if (state.state === 'error') {
+          throw state.error;
+        }
+
+        return state.value!;
+      })
+    )
+  }
+
+  preload(params: Params) {
+    return this.ensureLoad(params);
+  }
+
   get result$() {
     return this._result$.asObservable();
   }
@@ -175,7 +199,7 @@ class Loader<Result, Params, Error = unknown> {
   }
 }
 
-export const createLoader2 = <Result, Params>(
+export const createLoader = <Result, Params>(
   loaderFn: (params: Params) => Observable<Result>
 ) => {
   const loader = new Loader(loaderFn);
@@ -192,7 +216,7 @@ export const createLoader2 = <Result, Params>(
 };
 
 type CreateLoaderReturn<Result, Params> = ReturnType<
-  typeof createLoader2<Result, Params>
+  typeof createLoader<Result, Params>
 >;
 
 type CreateLoaderReturnType<L> = L extends CreateLoaderReturn<infer T, any>
@@ -295,3 +319,20 @@ export const mergeLoader = <
     s$: mergedResult,
   };
 };
+
+export function createLoaderService<Result, Params = void>(factory: () => (paramsObj: Params) => Observable<Result>) {
+
+  const token = new InjectionToken<Loader<Result, Params>>(`Token for loader service ${factory.name || factory.toString()}`, {
+    providedIn: 'root',
+    factory: () => {
+      return new Loader(factory());
+    }
+  });
+
+  function injectionFn() {
+    assertInInjectionContext(injectionFn);
+    return inject(token);
+  }
+
+  return injectionFn;
+}

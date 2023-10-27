@@ -1,12 +1,12 @@
 import { CommonModule } from '@angular/common';
 import { HttpClient } from '@angular/common/http';
 import { Component, inject } from '@angular/core';
-import { ActivatedRoute } from '@angular/router';
-import { LoaderContainerDirective, createLoader2, injectPathParams$, mergeLoader } from '@ngx-loader';
-import { forkJoin, from, map, of } from 'rxjs';
+import { toSignal } from '@angular/core/rxjs-interop';
+import { LoaderContainerDirective, createLoader, injectPathParams$, mergeLoader } from '@ngx-loader';
+import { forkJoin, map, of } from 'rxjs';
 import { z } from 'zod';
 import { Character, Episode } from './resolver';
-import { toSignal } from '@angular/core/rxjs-interop';
+import { injectCharacterLoader } from './character.loader';
 
 @Component({
   selector: 'ngx-loader-character-page',
@@ -18,9 +18,9 @@ import { toSignal } from '@angular/core/rxjs-interop';
     <button (click)="character.reload()">RELOAD</button>
     <button (click)="loadAnother()">Another</button>
 
-    <hr>
+    <!-- <hr>
     <pre>{{vm() | json}}</pre>
-    <hr>
+    <hr> -->
 
     <button (click)="character.reload()">RELOAD</button>
     <button (click)="loadAnother()">Another</button>
@@ -43,13 +43,15 @@ export class CharacterPageComponent {
     map(p => p.id)
   );
 
-  character = createLoader2((characterId: number) => {
-    return this.http.get<Character>(
-      `https://rickandmortyapi.com/api/character/${characterId}`
-    );
-  });
+  // character = createLoader2((characterId: number) => {
+  //   return this.http.get<Character>(
+  //     `https://rickandmortyapi.com/api/character/${characterId}`
+  //   );
+  // });
 
-  episodesOfCharacter = createLoader2((character: Character) => {
+  character = injectCharacterLoader();
+
+  episodesOfCharacter = createLoader((character: Character) => {
     const episodes = character.episode.map(episodeLink => {
       return this.http.get<Episode>(episodeLink)
     });
@@ -63,15 +65,15 @@ export class CharacterPageComponent {
     return forkJoin(episodes);
   });
 
-  vm = toSignal(mergeLoader({
-    charachter: this.character,
-    episodes: this.episodesOfCharacter
-  }).s$);
+  // vm = toSignal(mergeLoader({
+  //   charachter: this.character,
+  //   episodes: this.episodesOfCharacter
+  // }).s$);
 
   constructor() {
 
-    this.character.connect(this.characterId$);
-    this.episodesOfCharacter.connectFromLoader(this.character.s$);
+    // this.character.connect(this.characterId$);
+    // this.episodesOfCharacter.connectFromLoader(this.character.s$);
   }
 
   loadAnother() {

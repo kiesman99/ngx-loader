@@ -1,4 +1,4 @@
-import { Signal } from '@angular/core';
+import { Compiler, Signal, computed, signal } from '@angular/core';
 import { toObservable } from '@angular/core/rxjs-interop';
 import {
   ActivatedRouteSnapshot,
@@ -15,7 +15,7 @@ import {
   skipWhile,
   switchMap,
   take,
-  tap
+  tap,
 } from 'rxjs';
 import { LoaderResult } from './state';
 
@@ -23,11 +23,86 @@ type LoaderFn<Params, Result> = (params: Params) => Observable<Result>;
 
 const STALE_AFTER = 30000; // after 30 seconds
 
+class LL<Result, Params, ErrorType extends Error = Error> {
+  result = signal(new LoaderResult<Result, ErrorType>());
+  error = computed(() => this.result().error);
+  state = computed(() => this.result().state);
+  value = computed(() => this.result().value);
+  metadata = computed(() => this.result().metadata);
+
+  constructor(
+    private config: {
+      loaderFn: LoaderFn<Params, Result>;
+    }
+  ) {}
+
+  load(params: Params) {
+    this.setLoading();
+    this.config
+      .loaderFn(params)
+      .pipe(
+        catchError((err) => {
+          this.errored(err);
+          return EMPTY;
+        }),
+        take(1)
+      )
+      .subscribe((res) => this.successfull(res));
+  }
+
+  private setLoading() {
+    this.result.update(
+      (old) =>
+        new LoaderResult({
+          ...old,
+          state: 'pending',
+          metadata: {
+            ...old.metadata,
+            timestamp: undefined,
+            cached: false,
+          },
+        })
+    );
+  }
+
+  private successfull(res: Result) {
+    this.result.update(
+      (old) =>
+        new LoaderResult({
+          ...old,
+          state: 'success',
+          value: res,
+          metadata: {
+            timestamp: Date.now(),
+            cached: false,
+          },
+        })
+    );
+  }
+
+  private errored(error: ErrorType) {
+    this.result.update(
+      (old) =>
+        new LoaderResult({
+          ...old,
+          state: 'error',
+          error,
+          metadata: {
+            ...old.metadata,
+            timestamp: undefined,
+          },
+        })
+    );
+  }
+}
+
 class Loader<
   Result,
   Params,
   ErrorType extends Error = Error
 > extends BehaviorSubject<LoaderResult<Result, ErrorType>> {
+  state = signal(new LoaderResult<Result, ErrorType>());
+
   constructor(private loaderFn: LoaderFn<Params, Result>) {
     super(new LoaderResult());
   }
@@ -137,7 +212,7 @@ export class LoaderService<Result, Params, ErrorType extends Error = Error> {
   resolver(
     fn: (route: ActivatedRouteSnapshot, state: RouterStateSnapshot) => Params
   ): ResolveFn<LoaderResult<Result, ErrorType>> {
-    console.log('Resolver')
+    console.log('Resolver');
     return (_route, _state) => {
       const params = fn(_route, _state);
       const loader = this.getOrCreateLoader(params);
@@ -145,7 +220,7 @@ export class LoaderService<Result, Params, ErrorType extends Error = Error> {
       return loader.pipe(
         tap(() => console.log('resolver 1')),
         skipWhile((l) => ['initial', 'idle', 'pending'].includes(l.state)),
-        tap(() => console.log('resolver 2')),
+        tap(() => console.log('resolver 2'))
       );
     };
   }

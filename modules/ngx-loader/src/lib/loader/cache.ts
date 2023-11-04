@@ -1,3 +1,5 @@
+import { signal } from "@angular/core";
+
 export interface LoaderCache<Result, Params> {
   save: (params: Params, value: Result) => void;
   get: (params: Params) => Result | undefined;

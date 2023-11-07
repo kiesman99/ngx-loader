@@ -1,5 +1,5 @@
-import { Compiler, Signal, computed, signal } from '@angular/core';
-import { toObservable } from '@angular/core/rxjs-interop';
+import { Injectable, InjectionToken, Signal, computed, signal } from '@angular/core';
+import { toObservable, toSignal } from '@angular/core/rxjs-interop';
 import {
   ActivatedRouteSnapshot,
   ResolveFn,
@@ -10,8 +10,10 @@ import {
   EMPTY,
   Observable,
   ReplaySubject,
+  Subject,
   Subscription,
   catchError,
+  map,
   skipWhile,
   switchMap,
   take,
@@ -23,12 +25,16 @@ type LoaderFn<Params, Result> = (params: Params) => Observable<Result>;
 
 const STALE_AFTER = 30000; // after 30 seconds
 
-class LL<Result, Params, ErrorType extends Error = Error> {
+export class LL<Result, Params, ErrorType extends Error = Error> {
   result = signal(new LoaderResult<Result, ErrorType>());
   error = computed(() => this.result().error);
   state = computed(() => this.result().state);
   value = computed(() => this.result().value);
   metadata = computed(() => this.result().metadata);
+
+  connect(params$: Observable<Params>) {
+    const reloadSubject = new Subject<void>();
+  }
 
   constructor(
     private config: {
@@ -94,6 +100,63 @@ class LL<Result, Params, ErrorType extends Error = Error> {
         })
     );
   }
+}
+
+const LLS_TOKEN = new InjectionToken<LLS<unknown, unknown>>('LLS');
+
+abstract class LLS<Result, Params, ErrorType extends Error = Error> {
+  cache = new Map<Params, LL<Result, Params, ErrorType>>();
+
+  paramsObserverSubscription?: Subscription;
+
+  abstract loaderFn: LoaderFn<Params, Result>;
+
+  connectFromObservable(params: Observable<Params>) {
+    this.paramsObserverSubscription?.unsubscribe();
+
+    const loader$ = new ReplaySubject<LL<Result, Params, ErrorType>>(1);
+
+    this.paramsObserverSubscription = params
+      .pipe(map((params) => this.getOrCreateLoader(params)))
+      .subscribe((loader) => loader$.next(loader));
+
+    return loader$;
+  }
+
+  connect(params: Signal<Params>) {
+    return toSignal(this.connectFromObservable(toObservable(params)), {
+      requireSync: true,
+    });
+  }
+
+  // preload(params: Params) {}
+
+  getOrCreateLoader(params: Params) {
+    const cachedLoader = this.cache.get(params);
+    if (cachedLoader !== undefined) {
+      return cachedLoader;
+    }
+
+    const loader = new LL<Result, Params, ErrorType>({
+      loaderFn: this.loaderFn,
+    });
+
+    this.cache.set(params, loader);
+
+    return loader;
+  }
+}
+
+export function createLLS<Result, Params, ErrorType extends Error = Error>(_loaderFn: LoaderFn<Params, Result>) {
+
+  @Injectable({
+    providedIn: 'root',
+  })
+  class Service extends LLS<Result, Params, ErrorType> {
+    override loaderFn: LoaderFn<Params, Result> = _loaderFn;
+  }
+
+  return new Service();
 }
 
 class Loader<

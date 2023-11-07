@@ -1,8 +1,7 @@
+import { HttpClient } from '@angular/common/http';
 import { Injectable, Signal, inject } from '@angular/core';
 import { LoaderService } from '@ngx-loader';
 import { Character } from '../charachter/resolver';
-import { HttpClient } from '@angular/common/http';
-import { Observable, isObservable } from 'rxjs';
 
 @Injectable({
   providedIn: 'root',
@@ -23,12 +22,8 @@ export function injectCharacterLoader() {
     return inject(CharacterLoaderService);
 }
 
-export function useCharacter(params: Observable<number> | Signal<number>) {
+export function useCharacter(params: Signal<number>) {
     const loader = injectCharacterLoader();
-
-    if (isObservable(params)) {
-        return loader.connectFromObservable(params)
-    } 
 
     return loader.connect(params);
 }
